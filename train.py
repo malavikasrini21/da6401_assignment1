@@ -8,7 +8,7 @@ import wandb
 import numpy as np
 from dataloader import load_data
 from network import NeuralNetwork
-# from optimizers.py import get_optimizer
+from optimizer import get_optimizer
 
 # --- Argument Parsing ---
 def parse_args():
@@ -24,13 +24,13 @@ def parse_args():
 
     # # Training Parameters
     parser.add_argument("-n", "--saz", type=int, default=10,help="sample images")
-    parser.add_argument("-e", "--epochs", type=int, default=10)
-    parser.add_argument("-b", "--batch_size", type=int, default=1)
+    parser.add_argument("-e", "--epochs", type=int, default=5)
+    parser.add_argument("-b", "--batch_size", type=int, default=10)
 
     # # Loss & Optimizer
     parser.add_argument("-l", "--loss", choices=["mean_squared_error", "cross_entropy"], default="cross_entropy")
     parser.add_argument("-o", "--optimizer", choices=["sgd", "momentum", "nag", "rmsprop", "adam", "nadam"], default="sgd")
-    parser.add_argument("-lr", "--learning_rate", type=float, default=0.1)
+    parser.add_argument("-lr", "--learning_rate", type=float, default=0.001)
     
     # # Optimizer Parameters
     # parser.add_argument("-m", "--momentum", type=float, default=0.5)
@@ -38,12 +38,12 @@ def parse_args():
     # parser.add_argument("-beta1", "--beta1", type=float, default=0.5)
     # parser.add_argument("-beta2", "--beta2", type=float, default=0.5)
     # parser.add_argument("-eps", "--epsilon", type=float, default=1e-6)
-    # parser.add_argument("-w_d", "--weight_decay", type=float, default=0.0)
+    parser.add_argument("-w_d", "--weight_decay", type=float, default=0.0)
 
     # # Model Parameters
-    parser.add_argument("-w_i", "--weight_init", choices=["random", "Xavier"], default="random")
+    parser.add_argument("-w_i", "--weight_init", choices=["random", "Xavier"], default="Xavier")
     parser.add_argument("-nhl", "--num_layers", type=int, default=1)
-    parser.add_argument("-sz", "--hidden_size", type=int, default=4)
+    parser.add_argument("-sz", "--hidden_size", type=int, default=512)
     parser.add_argument("-a", "--activation", choices=["identity", "sigmoid", "tanh", "ReLU"], default="sigmoid")
 
     return parser.parse_args()
@@ -77,6 +77,7 @@ def main():
     print(y_smp_valid.shape)
     print(y_smp_test.shape)
     
+    optimizer = get_optimizer(args.optimizer, None, args)
 
     # Initialize Model
     model = NeuralNetwork(
@@ -86,16 +87,17 @@ def main():
         output_size=10,
         activation=args.activation,
         weight_init=args.weight_init,
-        loss_fn=args.loss
+        loss_fn=args.loss,
+        optimizer=optimizer
     )
     
     # # Get Optimizer
-    # optimizer = get_optimizer(args.optimizer, model, args)
+    # get_optimizer(args.optimizer, model, args)
 
     # # Train Model
     # model.train(X_smp_train, y_smp_train, X_smp_test, y_smp_test, epochs=args.epochs, batch_size=args.batch_size, loss=args.loss, optimizer=optimizer)
-    model.train(X_smp_train, y_smp_train, X_smp_test, y_smp_test, epochs=args.epochs, batch_size=args.batch_size)
-
+    #model.train(X_smp_train, y_smp_train, X_smp_test, y_smp_test, epochs=args.epochs, batch_size=args.batch_size)
+    model.train(X_smp_train, y_smp_train,X_smp_train, y_smp_train, epochs=args.epochs, batch_size=args.batch_size)
     # # Finish WandB
     # wandb.finish()
 

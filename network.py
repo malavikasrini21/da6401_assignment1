@@ -4,7 +4,7 @@ from loss import get_loss, get_loss_derivative
 
 #, optimizer -- use in class
 class NeuralNetwork:
-    def __init__(self, input_size, hidden_size, output_size, activation, weight_init, loss_fn):
+    def __init__(self, input_size, hidden_size, output_size, activation, weight_init, loss_fn,optimizer):
         """
         Initializes the neural network with one input layer, one hidden layer, and one output layer.
 
@@ -22,7 +22,7 @@ class NeuralNetwork:
         self.activation = get_activation(activation)  # Hidden layer activation
         self.loss_fn = get_loss(loss_fn)
         self.loss_derivative = get_loss_derivative(loss_fn)
-        # self.optimizer = optimizer  # Optimizer object
+        self.optimizer = optimizer  # Optimizer object
 
         # Weight Initialization
         if weight_init == "random":
@@ -54,22 +54,29 @@ class NeuralNetwork:
 
         # Compute gradients for output layer
         dZ2 = self.loss_derivative(self.A2, y_true)  # Error at output
+        print(f"dz2:{dZ2}")
         dW2 = np.dot(self.A1.T, dZ2) / m
+        print(f"dW2:{dW2}")
         db2 = np.sum(dZ2, axis=0, keepdims=True) / m
+        print(f"db2:{db2}")
 
         # Compute gradients for hidden layer
         dA1 = np.dot(dZ2, self.W2.T)  # Propagate error to hidden layer
+        print(f"dA1:{dA1}")
         dZ1 = self.activation.diff(dA1)  # Activation function derivative
+        print(f"dZ1:{dZ1}")
         dW1 = np.dot(self.X.T, dZ1) / m
+        print(f"dW1:{dW1}")
         db1 = np.sum(dZ1, axis=0, keepdims=True) / m
+        print(f"db1:{db1}")
 
-        # 🔍 Print gradient magnitudes for debugging
+        # Print gradient magnitudes for debugging
         print(f"Grad W1: {np.linalg.norm(dW1):.6f}, Grad b1: {np.linalg.norm(db1):.6f}")
         print(f"Grad W2: {np.linalg.norm(dW2):.6f}, Grad b2: {np.linalg.norm(db2):.6f}")
 
-    # # Update weights using optimizer
-    # self.optimizer.update(self.W1, self.b1, dW1, db1)
-    # self.optimizer.update(self.W2, self.b2, dW2, db2)
+        # Update weights using optimizer
+        self.optimizer.update(self.W1, self.b1, dW1, db1)
+        self.optimizer.update(self.W2, self.b2, dW2, db2)
 
 
     # def backward(self, y_true):
