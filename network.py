@@ -2,122 +2,208 @@ import numpy as np
 from activation import get_activation
 from loss import get_loss, get_loss_derivative
 
-#, optimizer -- use in class
 class NeuralNetwork:
-    def __init__(self, input_size, hidden_size, output_size, activation, weight_init, loss_fn,optimizer):
+    def __init__(self, input_size, hidden_size, output_size, activation, weight_init, loss_fn, optimizer, num_layers):
         """
-        Initializes the neural network with one input layer, one hidden layer, and one output layer.
-
-        :param input_size: Number of input features.
-        :param hidden_size: Number of neurons in the hidden layer.
-        :param output_size: Number of output classes (10 for MNIST/Fashion-MNIST).
-        :param activation: Activation function for the hidden layer.
-        :param weight_init: Weight initialization method ("random" or "Xavier").
-        :param loss_fn: Loss function ("cross_entropy" or "mean_squared_error").
-        :param optimizer: Optimizer object for updating weights.
+        Initializes a feedforward neural network with:
+        - An input layer
+        - Multiple hidden layers
+        - An output layer with Softmax activation
         """
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        self.output_size = output_size
-        self.activation = get_activation(activation)  # Hidden layer activation
-        self.loss_fn = get_loss(loss_fn)
+        self.layers = [input_size] + [hidden_size] * num_layers + [output_size]
+        self.activation_fn = get_activation(activation)  # Hidden layer activation
+        self.loss_fn = get_loss(loss_fn)  # Loss function
         self.loss_derivative = get_loss_derivative(loss_fn)
-        self.optimizer = optimizer  # Optimizer object
+        self.optimizer = optimizer  # Optimizer instance
 
-        # Weight Initialization
-        if weight_init == "random":
-            self.W1 = np.random.randn(input_size, hidden_size) * 0.01
-            self.W2 = np.random.randn(hidden_size, output_size) * 0.01
-        elif weight_init == "Xavier":
-            self.W1 = np.random.randn(input_size, hidden_size) * np.sqrt(1.0 / input_size)
-            self.W2 = np.random.randn(hidden_size, output_size) * np.sqrt(1.0 / hidden_size)
-        else:
-            raise ValueError("Invalid weight initialization method!")
+        # Initialize weights and biases
+        self.weights = []
+        self.biases = []
+        #debugging
+        self.running_means = []
+        self.running_vars = []
 
-        # Bias Initialization
-        self.b1 = np.zeros((1, hidden_size))
-        self.b2 = np.zeros((1, output_size))
+        self.gammas = [np.ones((1, self.layers[i + 1])) for i in range(len(self.layers) - 1)]
+        self.betas = [np.zeros((1, self.layers[i + 1])) for i in range(len(self.layers) - 1)]
+
+
+        for i in range(len(self.layers) - 1):
+            if weight_init == "random":
+                W = np.random.randn(self.layers[i], self.layers[i + 1]) * 0.01
+            elif weight_init == "Xavier":
+                W = np.random.randn(self.layers[i], self.layers[i + 1]) * np.sqrt(1.0 / self.layers[i])
+            else:
+                raise ValueError("Invalid weight initialization method!")
+
+            self.weights.append(W)
+            self.biases.append(np.zeros((1, self.layers[i + 1])))
+
+            #debugging
+            self.running_means.append(np.zeros((1, self.layers[i + 1])))
+            self.running_vars.append(np.ones((1, self.layers[i + 1])))
+    # def batch_norm_forward(self, Z, layer_idx):
+    #     """Apply batch normalization"""
+    #     epsilon = 1e-5
+    #     mean = np.mean(Z, axis=0, keepdims=True)
+    #     var = np.var(Z, axis=0, keepdims=True)
+        
+    #     # Running averages (for stability)
+    #     self.running_means[layer_idx] = 0.9 * self.running_means[layer_idx] + 0.1 * mean
+    #     self.running_vars[layer_idx] = 0.9 * self.running_vars[layer_idx] + 0.1 * var
+        
+    #     Z_norm = (Z - mean) / np.sqrt(var + epsilon)
+    #     return Z_norm
+
+    def batch_norm_forward(self, Z, layer_idx):
+        epsilon = 1e-5
+        mean = np.mean(Z, axis=0, keepdims=True)
+        var = np.var(Z, axis=0, keepdims=True)
+
+        # Running averages (for stability)
+        self.running_means[layer_idx] = 0.9 * self.running_means[layer_idx] + 0.1 * mean
+        self.running_vars[layer_idx] = 0.9 * self.running_vars[layer_idx] + 0.1 * var
+
+        Z_norm = (Z - mean) / np.sqrt(var + epsilon)
+        return self.gammas[layer_idx] * Z_norm + self.betas[layer_idx]  # Scale and shift
 
     def forward(self, X):
-        """Performs forward propagation."""
-        self.X = X  # Store input
-        self.Z1 = np.dot(X, self.W1) + self.b1  # Linear transformation (input → hidden)
-        self.A1 = self.activation(self.Z1)  # Activation function (hidden layer)
-        self.Z2 = np.dot(self.A1, self.W2) + self.b2  # Linear transformation (hidden → output)
-        self.A2 = get_activation("softmax")(self.Z2)  # Softmax output
+        """Performs forward propagation through all layers."""
+        self.a = [X]  # Store activations
+        self.z = []   # Store linear transformations
 
-        return self.A2  # Return predictions
+        for i in range(len(self.weights) - 1):
+            z = np.dot(self.a[-1], self.weights[i]) + self.biases[i]
+            if i != 0:
+                z = self.batch_norm_forward(z, i)
+            a = self.activation_fn(z)  # Hidden layer activation
+            self.z.append(z)
+            self.a.append(a)
+            print(f"Layer {i+1}: Mean Activation = {np.mean(a):.4f}, Variance = {np.var(a):.4f}")
 
-    def backward(self, y_true):
-        """Performs backpropagation and updates weights using optimizer."""
-        m = y_true.shape[0]  # Number of samples
+        # Output layer (Softmax)
+        z = np.dot(self.a[-1], self.weights[-1]) + self.biases[-1]
+        a = get_activation("softmax")(z)  # Softmax for classification
+        self.z.append(z)
+        self.a.append(a)
 
-        # Compute gradients for output layer
-        dZ2 = self.loss_derivative(self.A2, y_true)  # Error at output
-        print(f"dz2:{dZ2}")
-        dW2 = np.dot(self.A1.T, dZ2) / m
-        print(f"dW2:{dW2}")
-        db2 = np.sum(dZ2, axis=0, keepdims=True) / m
-        print(f"db2:{db2}")
-
-        # Compute gradients for hidden layer
-        dA1 = np.dot(dZ2, self.W2.T)  # Propagate error to hidden layer
-        print(f"dA1:{dA1}")
-        dZ1 = self.activation.diff(dA1)  # Activation function derivative
-        print(f"dZ1:{dZ1}")
-        dW1 = np.dot(self.X.T, dZ1) / m
-        print(f"dW1:{dW1}")
-        db1 = np.sum(dZ1, axis=0, keepdims=True) / m
-        print(f"db1:{db1}")
-
-        # Print gradient magnitudes for debugging
-        print(f"Grad W1: {np.linalg.norm(dW1):.6f}, Grad b1: {np.linalg.norm(db1):.6f}")
-        print(f"Grad W2: {np.linalg.norm(dW2):.6f}, Grad b2: {np.linalg.norm(db2):.6f}")
-
-        # Update weights using optimizer
-        self.optimizer.update(self.W1, self.b1, dW1, db1)
-        self.optimizer.update(self.W2, self.b2, dW2, db2)
-
+        return a  # Final predictions
 
     # def backward(self, y_true):
-    #     """Performs backpropagation and updates weights using optimizer."""
-    #     m = y_true.shape[0]  # Number of samples
+    #     """Performs backpropagation through all layers."""
+    #     m = y_true.shape[0]
+    #     dZ = self.loss_derivative(self.a[-1], y_true)  # Output layer error
 
-    #     # Compute gradients for output layer
-    #     dZ2 = self.loss_derivative(self.A2, y_true)  # Error at output
-    #     dW2 = np.dot(self.A1.T, dZ2) / m
-    #     db2 = np.sum(dZ2, axis=0, keepdims=True) / m
+    #     dWs = []
+    #     dbs = []
 
-    #     # Compute gradients for hidden layer
-    #     dA1 = np.dot(dZ2, self.W2.T)  # Propagate error to hidden layer
-    #     dZ1 = self.activation.diff(dA1)  # Activation function derivative
-    #     dW1 = np.dot(self.X.T, dZ1) / m
-    #     db1 = np.sum(dZ1, axis=0, keepdims=True) / m
+    #     for i in range(len(self.weights) - 1, 0, -1):
+    #         dW = np.dot(self.a[i].T, dZ) / m
+    #         db = np.sum(dZ, axis=0, keepdims=True) / m
+    #         dWs.insert(0, dW)
+    #         dbs.insert(0, db)
+
+    #         dA = np.dot(dZ, self.weights[i].T)
+    #         dZ = self.activation_fn.diff(dA)
+            
+    #         print(f"Layer {i}: Grad W = {np.linalg.norm(dW):.6f}, Grad b = {np.linalg.norm(db):.6f}")
+
+    #     dW0 = np.dot(self.a[0].T, dZ) / m
+    #     db0 = np.sum(dZ, axis=0, keepdims=True) / m
+    #     dWs.insert(0, dW0)
+    #     dbs.insert(0, db0)
+
+    #     print(f"Input Layer: Grad W = {np.linalg.norm(dW0):.6f}, Grad b = {np.linalg.norm(db0):.6f}")
+    #     # Apply gradient clipping
+    #     clip_value = 5.0
+    #     dWs = [np.clip(dW, -clip_value, clip_value) for dW in dWs]
+    #     dbs = [np.clip(db, -clip_value, clip_value) for db in dbs]
+
+    #     # Apply L2 regularization debug
+    #     lambda_reg = 0.01  # L2 Regularization strength
+    #     for i in range(len(self.weights)):
+    #         dWs[i] += lambda_reg * self.weights[i]
 
     #     # Update weights using optimizer
-    #     # self.optimizer.update(self.W1, self.b1, dW1, db1)
-    #     # self.optimizer.update(self.W2, self.b2, dW2, db2)
+    #     for i in range(len(self.weights)):
+    #         self.optimizer.update(self.weights[i], self.biases[i], dWs[i], dbs[i])
 
-    def train(self, X_train, y_train, X_test, y_test, epochs, batch_size):
-        """Trains the neural network using mini-batch gradient descent."""
+    def backward(self, y_true):
+        m = y_true.shape[0]
+        dZ = self.loss_derivative(self.a[-1], y_true)  # Output layer error
+
+        dWs = []
+        dbs = []
+        dGammas = []
+        dBetas = []
+
+        for i in range(len(self.weights) - 1, 0, -1):
+            dW = np.dot(self.a[i].T, dZ) / m
+            db = np.sum(dZ, axis=0, keepdims=True) / m
+            dWs.insert(0, dW)
+            dbs.insert(0, db)
+
+            dA = np.dot(dZ, self.weights[i].T)
+            dZ = self.activation_fn.diff(dA)
+
+            # Gradients for batch normalization
+            if i != 0:
+                dGamma = np.sum(dZ * self.a[i], axis=0, keepdims=True) / m
+                dBeta = np.sum(dZ, axis=0, keepdims=True) / m
+                dGammas.insert(0, dGamma)
+                dBetas.insert(0, dBeta)
+
+            print(f"Layer {i}: Grad W = {np.linalg.norm(dW):.6f}, Grad b = {np.linalg.norm(db):.6f}")
+
+        dW0 = np.dot(self.a[0].T, dZ) / m
+        db0 = np.sum(dZ, axis=0, keepdims=True) / m
+        dWs.insert(0, dW0)
+        dbs.insert(0, db0)
+
+        print(f"Input Layer: Grad W = {np.linalg.norm(dW0):.6f}, Grad b = {np.linalg.norm(db0):.6f}")
+
+        # Apply gradient clipping
+        clip_value = 5.0
+        dWs = [np.clip(dW, -clip_value, clip_value) for dW in dWs]
+        dbs = [np.clip(db, -clip_value, clip_value) for db in dbs]
+        dGammas = [np.clip(dGamma, -clip_value, clip_value) for dGamma in dGammas]
+        dBetas = [np.clip(dBeta, -clip_value, clip_value) for dBeta in dBetas]
+
+        # Apply L2 regularization
+        lambda_reg = 0.01  # L2 Regularization strength
+        for i in range(len(self.weights)):
+            dWs[i] += lambda_reg * self.weights[i]
+
+        # Update weights, biases, gammas, and betas using optimizer
+        for i in range(len(self.weights)):
+            self.optimizer.update(self.weights[i], self.biases[i], dWs[i], dbs[i])
+            if i != 0:
+                self.optimizer.update(self.gammas[i - 1], self.betas[i - 1], dGammas[i - 1], dBetas[i - 1])
+
+    def train(self, X_train, y_train, X_val, y_val, epochs, batch_size):
+        """Trains the network and computes train & validation loss/accuracy."""
         for epoch in range(epochs):
             indices = np.arange(X_train.shape[0])
-            np.random.shuffle(indices)  # Shuffle data
+            np.random.shuffle(indices)
             X_train, y_train = X_train[indices], y_train[indices]
 
             for i in range(0, X_train.shape[0], batch_size):
-                X_batch = X_train[i:i + batch_size]
-                y_batch = y_train[i:i + batch_size]
-
+                X_batch, y_batch = X_train[i:i + batch_size], y_train[i:i + batch_size]
                 self.forward(X_batch)
                 self.backward(y_batch)
 
-            # Compute loss & accuracy after each epoch
-            y_pred = self.forward(X_test)
-            loss_value = self.loss_fn(y_pred, y_test)
-            accuracy = np.mean(np.argmax(y_pred, axis=1) == np.argmax(y_test, axis=1)) * 100
+            # Compute train & validation loss/accuracy
+            train_loss, train_acc = self.evaluate(X_train, y_train)
+            val_loss, val_acc = self.evaluate(X_val, y_val)
 
-            print(f"Epoch {epoch+1}: Loss = {loss_value:.4f}, Accuracy = {accuracy:.2f}%")
+            print(f"Epoch {epoch+1}: Train Loss = {train_loss:.4f}, Train Acc = {train_acc:.2f}%, "
+                  f"Val Loss = {val_loss:.4f}, Val Acc = {val_acc:.2f}%")
+
+    def evaluate(self, X, y):
+        """Computes loss & accuracy for given dataset."""
+        y_pred = self.forward(X)
+        loss = self.loss_fn(y_pred, y)
+        accuracy = np.mean(np.argmax(y_pred, axis=1) == np.argmax(y, axis=1)) * 100
+        return loss, accuracy
 
     def predict(self, X):
         """Predicts class labels for input X."""
