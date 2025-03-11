@@ -1,14 +1,12 @@
-import wandb
 import argparse
+import wandb
 import numpy as np
 from keras.datasets import fashion_mnist
-
-import argparse
-import wandb
-import numpy as np
-from dataloader import load_data
+from keras.datasets import mnist
+from dataloader import *
 from network import NeuralNetwork
 from optimizer import get_optimizer
+from activation import get_activation
 
 # --- Argument Parsing ---
 def parse_args():
@@ -16,100 +14,183 @@ def parse_args():
     
     # WandB Args
     parser.add_argument("--use_wandb", type=str, default="false")
-    parser.add_argument("-wp", "--wandb_project", type=str, default="myprojectname")
-    parser.add_argument("-we", "--wandb_entity", type=str, default="myname")
+    parser.add_argument("-wp", "--wandb_project", type=str, default="da6401_assignment1")
+    parser.add_argument("-we", "--wandb_entity", type=str, default="hyperparameter_optimization")
 
     # Dataset
     parser.add_argument("-d", "--dataset", choices=["mnist", "fashion_mnist"], default="fashion_mnist")
 
-    # # Training Parameters
-    parser.add_argument("-n", "--saz", type=int, default=10,help="sample images")
-    parser.add_argument("-e", "--epochs", type=int, default=100)
-    parser.add_argument("-b", "--batch_size", type=int, default=48)
+    # Training Parameters
+    parser.add_argument("-e", "--epochs", type=int, default=10)
+    parser.add_argument("-b", "--batch_size", type=int, default=32)
 
     # # Loss & Optimizer
     parser.add_argument("-l", "--loss", choices=["mean_squared_error", "cross_entropy"], default="cross_entropy")
-    parser.add_argument("-o", "--optimizer", choices=["sgd", "momentum", "nag", "rmsprop", "adam", "nadam"], default="sgd")
+    parser.add_argument("-o", "--optimizer", choices=["sgd", "momentum", "nag", "rmsprop", "adam", "nadam"], default="adam")
     parser.add_argument("-lr", "--learning_rate", type=float, default=0.001)
     
-    # # Optimizer Parameters
-    # parser.add_argument("-m", "--momentum", type=float, default=0.5)
-    # parser.add_argument("-beta", "--beta", type=float, default=0.5)
-    # parser.add_argument("-beta1", "--beta1", type=float, default=0.5)
-    # parser.add_argument("-beta2", "--beta2", type=float, default=0.5)
-    # parser.add_argument("-eps", "--epsilon", type=float, default=1e-6)
-    parser.add_argument("-w_d", "--weight_decay", type=float, default=0.0)
+    # Optimizer Parameters
+    parser.add_argument("-m", "--momentum", type=float, default=0.9)
+    parser.add_argument("-beta", "--beta", type=float, default=0.9)
+    parser.add_argument("-beta1", "--beta1", type=float, default=0.9)
+    parser.add_argument("-beta2", "--beta2", type=float, default=0.999)
+    parser.add_argument("-eps", "--epsilon", type=float, default=1e-8)
+    parser.add_argument("-w_d", "--weight_decay", type=float, default=0.005)
 
     # # Model Parameters
-    parser.add_argument("-w_i", "--weight_init", choices=["random", "Xavier"], default="random")
+    parser.add_argument("-w_i", "--weight_init", choices=["random", "Xavier"], default="Xavier")
     parser.add_argument("-nhl", "--num_layers", type=int, default=3)
-    parser.add_argument("-sz", "--hidden_size", type=int, default=128)
-    parser.add_argument("-a", "--activation", choices=["identity", "sigmoid", "tanh", "ReLU"], default="sigmoid")
+    parser.add_argument("-sz", "--hidden_size", type=int, default=256)
+    parser.add_argument("-a", "--activation", choices=["identity", "sigmoid", "tanh", "ReLU"], default="tanh")
 
     return parser.parse_args()
 
+def wandb_sweep():
+    with wandb.init() as run:
+        config = wandb.config
+        epochs = config.epochs
+        num_layers = config.num_layers
+        learning_rate = config.learning_rate
+        hidden_size = config.hidden_size
+        weight_decay = config.weight_decay
+        batch_size = config.batch_size
+        optimizer = config.optimizer
+        weight_init = config.weight_init
+        activation = config.activation
+        loss = config.loss
+        
+        if args.use_wandb == "true":
+            wandb.init(project=args.wandb_project, entity=args.wandb_entity)
+        run_name=f"ac_{activation}_hl_{num_layers}_hs_{hidden_size}_bs_{batch_size}_op_{optimizer}_ep_{epochs}"
+        wandb.run.name=run_name
+
+        optimizer = get_optimizer(args.optimizer, None, args)        
+        model = NeuralNetwork(
+            use_wandb="true",
+            wandb_project=args.wandb_project,
+            wandb_entity=args.wandb_entity,
+            input_size=X_smp_train.shape[1],
+            hidden_size=args.hidden_size,
+            output_size=10,
+            activation=args.activation,
+            weight_init=args.weight_init,
+            loss_fn=args.loss,
+            optimizer=optimizer,
+            num_layers=args.num_layers,
+            lr=args.learning_rate,
+            momentum=args.momentum,
+            beta=args.beta,
+            beta1=args.beta1,
+            beta2=args.beta2,
+            epsilon=args.epsilon,
+            weight_decay=args.weight_decay,
+        )
+    model.train(X_smp_train, y_smp_train,X_smp_valid, y_smp_valid, epochs=args.epochs, batch_size=args.batch_size)
+
+        
 # --- Main Execution ---
-def main():
+def main(args: argparse.Namespace):
+    if args.use_wandb == "true":
+        wandb.login()
+        sweep_config = {
+            'method': 'bayes',
+            'name' : 'sweep cross entropy',
+            'metric': {
+                'name': 'avg_valid_acc',
+                'goal': 'maximize'
+            },
+            'parameters': {
+                'epochs': {
+                    'values': [10,20,30]
+                },
+                'num_layers': {
+                    'values': [3,4,5]
+                },
+                'learning_rate': {
+                    'values': [0.001, 0.0001]
+                },'hidden_size':{
+                    'values': [32,64,128,256]
+                },
+                'weight_decay': {
+                    'values': [0,0.0005,0.005,0.5]
+                },'batch_size':{
+                    'values': [16,32,64,128,256]
+                },'optimizer':{
+                    'values': ['sgd','momentum','nag','rmsprop','adam','nadam']
+                },'weight_init': {
+                    'values': ['random','xavier']
+                },'activation':{
+                    'values': ['sigmoid','tanh','ReLu']
+                },'loss':{
+                    'values':['cross_entropy','mean_squared_error']
+                }
+            }
+        }
+        sweep_id = wandb.sweep(sweep=sweep_config, project=args.wandb_project)
+
+    if args.use_wandb == "true":
+        wandb.agent(sweep_id, function=wandb_sweep, count=10)
+        wandb.finish()
+    else:    
+        optimizer = get_optimizer(args.optimizer, None, args)
+
+        # Initialize Model
+        model = NeuralNetwork(
+            use_wandb=args.use_wandb,
+            wandb_project=args.wandb_project,
+            wandb_entity=args.wandb_entity,
+            input_size=X_smp_train.shape[1],
+            hidden_size=args.hidden_size,
+            output_size=10,
+            activation=args.activation,
+            weight_init=args.weight_init,
+            loss_fn=args.loss,
+            optimizer=optimizer,
+            num_layers=args.num_layers,
+            lr=args.learning_rate,
+            momentum=args.momentum,
+            beta=args.beta,
+            beta1=args.beta1,
+            beta2=args.beta2,
+            epsilon=args.epsilon,
+            weight_decay=args.weight_decay,
+        )
+        
+        model.train(X_smp_train, y_smp_train,X_smp_valid, y_smp_valid, epochs=args.epochs, batch_size=args.batch_size)
+        
+        # Test Model
+        test_predictions = model.predict(X_test)
+        test_predictions=one_hot_encode(test_predictions)
+        test_predictions = get_activation("softmax")(test_predictions)  # Ensure predictions are probabilities
+        test_loss = model.loss_fn(test_predictions, y_test)
+        test_accuracy = np.mean(np.argmax(test_predictions, axis=1) == np.argmax(y_test, axis=1)) * 100
+
+        print(f"Test Loss: {test_loss:.4f}, Test Accuracy: {test_accuracy:.2f}%")
+
+        if args.use_wandb == "true":
+            wandb.init(project=args.wandb_project)
+            wandb.run.name="confusion_matrix"
+            wandb.log({"confusion_matrix" : wandb.plot.confusion_matrix(probs=None, y_true=y_test, preds=test_predictions, class_names=labels)})
+            wandb.finish()
+
+if __name__ == "__main__":
     args = parse_args()
-    
-    # Initialize Weights & Biases
-    if args.use_wandb.lower() == "true":
-        wandb.init(project=args.wandb_project, entity=args.wandb_entity, config=vars(args))
-    
+    if args.dataset == 'fashion_mnist':
+        target_classes = ["T-shirt/top", "Trouser", "Pullover", "Dress", "Coat", "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"]
+    elif args.dataset == 'mnist':
+        target_classes = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"]
     # Load Data
     X_train, y_train, X_test, y_test = load_data(args.dataset)
- 
-    #small test split
-    X_smp_test = X_test[:args.saz]
-    y_smp_test = y_test[:args.saz]
-
-    splits=int(0.85 * X_train.shape[0])
+    splits=int(0.90 * X_train.shape[0])
     # train split
-    # X_smp_train = X_train[(args.saz//3):args.saz]
-    # y_smp_train = y_train[(args.saz//3):args.saz]
     X_smp_train = X_train[:splits]
     y_smp_train = y_train[:splits]
     # valid split 
-    # X_smp_valid = X_smp_train[:args.saz//3]
-    # y_smp_valid = y_smp_train[:args.saz//3]
     X_smp_valid = X_train[splits:]
     y_smp_valid = y_train[splits:]
 
-    # print(X_smp_train.shape)
-    # print(X_smp_valid.shape)
-    # print(X_smp_test.shape)
-    # print(y_smp_train.shape)
-    # print(y_smp_valid.shape)
-    # print(y_smp_test.shape)
-
     print(f"Train set shape: {X_smp_train.shape}, {y_smp_train.shape}")
     print(f"Validation set shape: {X_smp_valid.shape}, {y_smp_valid.shape}")
-    print(f"Test set shape: {X_smp_test.shape}, {y_smp_test.shape}")
-    
-    optimizer = get_optimizer(args.optimizer, None, args)
+    print(f"Test set shape: {X_test.shape}, {y_test.shape}")
 
-    # Initialize Model
-    model = NeuralNetwork(
-        input_size=X_smp_train.shape[1],
-        # hidden_layers=args.num_layers,
-        hidden_size=args.hidden_size,
-        output_size=10,
-        activation=args.activation,
-        weight_init=args.weight_init,
-        loss_fn=args.loss,
-        optimizer=optimizer,
-        num_layers=args.num_layers
-    )
-    
-    # # Get Optimizer
-    # get_optimizer(args.optimizer, model, args)
-
-    # # Train Model
-    # model.train(X_smp_train, y_smp_train, X_smp_test, y_smp_test, epochs=args.epochs, batch_size=args.batch_size, loss=args.loss, optimizer=optimizer)
-    #model.train(X_smp_train, y_smp_train, X_smp_test, y_smp_test, epochs=args.epochs, batch_size=args.batch_size)
-    model.train(X_smp_train, y_smp_train,X_smp_valid, y_smp_valid, epochs=args.epochs, batch_size=args.batch_size)
-    # # Finish WandB
-    # wandb.finish()
-
-if __name__ == "__main__":
-    main()
+    main(args)

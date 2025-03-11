@@ -6,9 +6,7 @@ def mean_squared_error(y_pred, y_true):
 
 # MSE Derivative
 def mean_squared_error_derivative(y_pred, y_true):
-    eps = 1e-8  # Numerical stability
-    # return 2 * (y_pred - y_true) / (y_true.shape[0] + eps)
-    return 2 * (y_pred - y_true) / (y_true.shape[0])
+    return 2 * (y_pred - y_true) / y_true.shape[0]
 
 # Cross-Entropy Loss
 def cross_entropy(y_pred, y_true):
@@ -17,9 +15,8 @@ def cross_entropy(y_pred, y_true):
 
 # Cross-Entropy Derivative
 def cross_entropy_derivative(y_pred, y_true):
-    eps = 1e-8  # Numerical stability
-    # return -y_true / (y_pred + eps)
     return y_pred - y_true
+
 # Get Loss Function
 def get_loss(loss_name):
     if loss_name == "mean_squared_error":

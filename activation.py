@@ -9,12 +9,6 @@ class Identity:
     def diff(self, prev_grad):
         return prev_grad
 
-    # def parameters(self):
-    #     return []
-
-    # def d_parameters(self):
-    #     return []
-
 # --- Sigmoid Activation ---
 class Sigmoid:
     def __call__(self, x):
@@ -24,12 +18,6 @@ class Sigmoid:
 
     def diff(self, prev_grad):
         return prev_grad * (self.out * (1 - self.out))
-
-    # def parameters(self):
-    #     return []
-
-    # def d_parameters(self):
-    #     return []
 
 # --- Tanh Activation ---
 class Tanh:
@@ -41,12 +29,6 @@ class Tanh:
     def diff(self, prev_grad):
         return prev_grad * (1 - self.out ** 2)
 
-    # def parameters(self):
-    #     return []
-
-    # def d_parameters(self):
-    #     return []
-
 # --- ReLU Activation ---
 class ReLU:
     def __call__(self, x):
@@ -55,13 +37,7 @@ class ReLU:
         return self.out
 
     def diff(self, prev_grad):
-        return prev_grad * (self.x > 0).astype(float)
-
-    # def parameters(self):
-    #     return []
-
-    # def d_parameters(self):
-    #     return []
+        return prev_grad * (self.out > 0).astype(float)  # Used self.out instead of self.x
 
 # --- Softmax Activation (for output layer) ---
 class Softmax:
@@ -72,12 +48,6 @@ class Softmax:
 
     def diff(self, prev_grad):
         return prev_grad  # Softmax derivative is handled with cross-entropy
-
-    # def parameters(self):
-    #     return []
-
-    # def d_parameters(self):
-    #     return []
 
 # --- Function to Retrieve Activation Class ---
 def get_activation(name):
