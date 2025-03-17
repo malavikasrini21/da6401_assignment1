@@ -2,6 +2,7 @@ import wandb
 import numpy as np
 from activation import get_activation
 from loss import get_loss, get_loss_derivative
+from dataloader import *
 
 class NeuralNetwork:
     def __init__(self, use_wandb,wandb_project,wandb_entity,input_size, hidden_size, output_size, activation, weight_init, loss_fn, optimizer, num_layers, lr,momentum,beta,beta1,beta2,epsilon,weight_decay):
@@ -128,7 +129,7 @@ class NeuralNetwork:
             else:
                 self.optimizer.update(self.weights[i], self.biases[i], dWs[i], dbs[i])    
     
-    def train(self, X_train, y_train, X_val, y_val, epochs, batch_size):
+    def train(self, X_train, y_train, X_val, y_val, X_test, y_test,target_classes,epochs, batch_size):
         """Trains the network and computes train & validation loss/accuracy."""
         if self.use_wandb == "true":
             wandb.init(project=self.wandb_project, entity=self.wandb_entity)
@@ -182,7 +183,7 @@ class NeuralNetwork:
 
             print(f"Epoch {epoch + 1}: Train Loss = {epoch_loss:.4f}, Train Acc = {tr_acc:.2f}%, "
                 f"Val Loss = {val_loss:.4f}, Val Acc = {val_acc:.2f}%")
-
+            
             if self.use_wandb == "true":
                 wandb.log({
                     'epoch': epoch,
@@ -191,6 +192,28 @@ class NeuralNetwork:
                     'avg_train_acc': tr_acc,
                     'avg_valid_acc': val_acc
                 })
+            # Test Model
+            test_predictions = self.predict(X_test)
+            test_predictions_oh = one_hot_encode(test_predictions)
+            test_predictions_oh = get_activation("softmax")(test_predictions_oh)
+            test_loss = self.loss_fn(test_predictions_oh, y_test)
+            test_accuracy = np.mean(np.argmax(test_predictions_oh, axis=1) == np.argmax(y_test, axis=1)) * 100
+
+            # Log test metrics to WandB
+            if self.use_wandb == "true":
+                print(f"Test Loss: {test_loss:.4f}, Test Accuracy: {test_accuracy:.2f}%")
+                wandb.log({"Test Loss": test_loss, "Test Accuracy": test_accuracy})
+
+                # Log Confusion Matrix
+                y_true = np.argmax(y_test, axis=1)  # Convert y_test to class indices
+                y_pred = np.argmax(test_predictions_oh, axis=1)  # Convert predictions to class indices
+                
+                wandb.log({"confusion_matrix": wandb.plot.confusion_matrix(
+                        probs=None,  # No probabilities, just class indices
+                        y_true=y_true,  # 1D array of true class indices
+                        preds=y_pred,  # 1D array of predicted class indices
+                        class_names=target_classes  # List of class names
+                )})
 
         if self.use_wandb == "true":
             wandb.finish()
