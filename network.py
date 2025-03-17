@@ -14,10 +14,6 @@ class NeuralNetwork:
         self.use_wandb=use_wandb
         self.wandb_project = wandb_project
         self.wandb_entity = wandb_entity
-
-        if self.use_wandb == "true":
-            wandb.init(project=self.wandb_project, entity=self.wandb_entity)
-
         self.layers = [input_size] + [hidden_size] * num_layers + [output_size]
         #debug
         # print("Layers Configuration:", self.layers)
@@ -40,12 +36,21 @@ class NeuralNetwork:
         self.biases = []
         
         #debugging
-        # self.running_means = []
-        # self.running_vars = []
-
-        # self.gammas = [np.ones((1, self.layers[i + 1])) for i in range(len(self.layers) - 1)]
-        # self.betas = [np.zeros((1, self.layers[i + 1])) for i in range(len(self.layers) - 1)]
-
+        print(f"weight_init: {self.weight_init}")
+        print(f"activation: {activation}")
+        print(f"loss_fn: {loss_fn}")
+        print(f"optimizer: {optimizer}")
+        print(f"lr: {lr}")
+        print(f"momentum: {momentum}")
+        print(f"beta: {beta}")
+        print(f"beta1: {beta1}")
+        print(f"beta2: {beta2}")
+        print(f"epsilon: {epsilon}")
+        print(f"weight_decay: {weight_decay}")
+        print(f"input_size: {input_size}")
+        print(f"hidden_size: {hidden_size}")
+        print(f"output_size: {output_size}")
+        print(f"num_layers: {num_layers}")
 
         for i in range(len(self.layers) - 1):
             if self.weight_init == "random":
@@ -58,27 +63,6 @@ class NeuralNetwork:
             self.weights.append(W)
             self.biases.append(np.zeros((1, self.layers[i + 1])))
 
-            #debugging
-            # self.running_means.append(np.zeros((1, self.layers[i + 1])))
-            # self.running_vars.append(np.ones((1, self.layers[i + 1])))
-        
-        #debug
-        #for i, W in enumerate(self.weights):
-            # print(f"Layer {i}: Weights Shape = {W.shape}")
-
-
-    # def batch_norm_forward(self, Z, layer_idx):
-    #     epsilon = 1e-5
-    #     mean = np.mean(Z, axis=0, keepdims=True)
-    #     var = np.var(Z, axis=0, keepdims=True)
-
-    #     # Running averages (for stability)
-    #     self.running_means[layer_idx] = 0.9 * self.running_means[layer_idx] + 0.1 * mean
-    #     self.running_vars[layer_idx] = 0.9 * self.running_vars[layer_idx] + 0.1 * var
-
-    #     Z_norm = (Z - mean) / np.sqrt(var + epsilon)
-    #     return self.gammas[layer_idx] * Z_norm + self.betas[layer_idx]  # Scale and shift
-
     def forward(self, X):
         """Performs forward propagation through all layers."""
         self.a = [X]  # Store activations
@@ -86,8 +70,6 @@ class NeuralNetwork:
 
         for i in range(len(self.weights) - 1):
             z = np.dot(self.a[-1], self.weights[i]) + self.biases[i]
-            # if i != 0:
-            #     z = self.batch_norm_forward(z, i)
             a = self.activation_fn(z)  # Hidden layer activation
             self.z.append(z)
             self.a.append(a)
@@ -108,8 +90,6 @@ class NeuralNetwork:
 
         dWs = []
         dbs = []
-        # dGammas = []
-        # dBetas = []
 
         for i in range(len(self.weights) - 1, 0, -1):
             dW = np.dot(self.a[i].T, dZ) / m
@@ -119,15 +99,6 @@ class NeuralNetwork:
 
             dA = np.dot(dZ, self.weights[i].T)
             dZ = self.activation_fn.diff(dA)
-
-            # Gradients for batch normalization
-            # if i != 0:
-            #     dGamma = np.sum(dZ * self.a[i], axis=0, keepdims=True) / m
-            #     dBeta = np.sum(dZ, axis=0, keepdims=True) / m
-            #     dGammas.insert(0, dGamma)
-            #     dBetas.insert(0, dBeta)
-
-            #print(f"Layer {i}: Grad W = {np.linalg.norm(dW):.6f}, Grad b = {np.linalg.norm(db):.6f}")
 
         dW0 = np.dot(self.a[0].T, dZ) / m
         db0 = np.sum(dZ, axis=0, keepdims=True) / m
@@ -140,94 +111,79 @@ class NeuralNetwork:
         clip_value = 5.0
         dWs = [np.clip(dW, -clip_value, clip_value) for dW in dWs]
         dbs = [np.clip(db, -clip_value, clip_value) for db in dbs]
-        # dGammas = [np.clip(dGamma, -clip_value, clip_value) for dGamma in dGammas]
-        # dBetas = [np.clip(dBeta, -clip_value, clip_value) for dBeta in dBetas]
 
         # Apply L2 regularization
         lambda_reg = self.weight_decay  # L2 Regularization strength
         for i in range(len(self.weights)):
             dWs[i] += lambda_reg * self.weights[i]
 
-        # Update weights, biases, gammas, and betas using optimizer
+        # Update weights, biases using optimizer
         
         for i in range(len(self.weights)):
             #debug
             #print(f"Updating Layer {i}: Weight Shape = {self.weights[i].shape}, dW Shape = {dWs[i].shape}")
             
-            if self.optimizer.__class__.__name__.lower() in ["adam", "nadam"]:
-                #print("*****")
+            if self.optimizer.__class__.__name__.lower() in ["momentum","nag","adam","rmsprop","nadam"]:
                 self.optimizer.update(self.weights[i], self.biases[i], dWs[i], dbs[i],i)
-                # if i != 0:
-                # # print(f"Updating Layer {i}: gamma shape ={self.gammas[i - 1].shape}, dgammas= {dGammas[i - 1].shape}")
-                #     self.optimizer.update(self.gammas[i - 1].reshape(1,-1), self.betas[i - 1].reshape(1,-1), dGammas[i - 1].reshape(1,-1), dBetas[i - 1].reshape(1,-1),i)
             else:
-                self.optimizer.update(self.weights[i], self.biases[i], dWs[i], dbs[i],i)
-                # if i != 0:
-                #     # print(f"Updating Layer {i}: gamma shape ={self.gammas[i - 1].shape}, dgammas= {dGammas[i - 1].shape}")
-                #     self.optimizer.update(self.gammas[i - 1].reshape(1,-1), self.betas[i - 1].reshape(1,-1), dGammas[i - 1].reshape(1,-1), dBetas[i - 1].reshape(1,-1))
+                self.optimizer.update(self.weights[i], self.biases[i], dWs[i], dbs[i])    
     
     def train(self, X_train, y_train, X_val, y_val, epochs, batch_size):
         """Trains the network and computes train & validation loss/accuracy."""
-        
-        self.optimizer.learning_rate = self.lr
-        self.optimizer.momentum=self.momentum
-        self.optimizer.beta=self.beta
-        self.optimizer.beta1=self.beta1
-        self.optimizer.beta2=self.beta2
-        self.optimizer.epsilon=self.epsilon
-        self.optimizer.weight_decay=self.weight_decay
-        
-        ns=X_train.shape[0]
-        nb=int(np.ceil(ns/batch_size))
+        if self.use_wandb == "true":
+            wandb.init(project=self.wandb_project, entity=self.wandb_entity)
 
-        #Training loop
+        self.optimizer.learning_rate = self.lr
+        self.optimizer.momentum = self.momentum
+        self.optimizer.beta = self.beta
+        self.optimizer.beta1 = self.beta1
+        self.optimizer.beta2 = self.beta2
+        self.optimizer.epsilon = self.epsilon
+        self.optimizer.weight_decay = self.weight_decay
+
+        ns = X_train.shape[0]
+        nb = int(np.ceil(ns / batch_size))
+
+        # Training loop
         for epoch in range(epochs):
-            epoch_loss=0.0
-            epoch_acc=0
-            #shuffle training data
+            epoch_loss = 0.0
+            epoch_acc = 0
+
+            # Shuffle training data
             indices = np.arange(X_train.shape[0])
             np.random.shuffle(indices)
             X_train, y_train = X_train[indices], y_train[indices]
 
-            #full batching
-            # for i in range(0, X_train.shape[0], batch_size):
-            #     X_batch, y_batch = X_train[i:i + batch_size], y_train[i:i + batch_size]
-            #     self.forward(X_batch)
-            #     self.backward(y_batch)
             for b in range(nb):
-                si=b*batch_size
-                ei=min((b+1) * batch_size, ns)
-                X_batch=X_train[si:ei]
-                y_batch=y_train[si:ei]
+                si = b * batch_size
+                ei = min((b + 1) * batch_size, ns)
+                X_batch = X_train[si:ei]
+                y_batch = y_train[si:ei]
 
-                activations=self.forward(X_batch)
-                
-                #loss calculation
-                y_pred=activations
+                # Forward pass
+                activations = self.forward(X_batch)
+
+                # Loss calculation
+                y_pred = activations
                 loss = self.loss_fn(y_pred, y_batch)
                 accuracy = np.sum(np.argmax(y_pred, axis=1) == np.argmax(y_batch, axis=1))
 
-                #backward pass
+                # Backward pass
                 self.backward(y_batch)
 
                 epoch_loss += loss * (ei - si)
                 epoch_acc += accuracy
-            
-            epoch_loss /= ns
-            tr_acc=epoch_acc/ns
 
-            #validation
+            epoch_loss /= ns
+            tr_acc = epoch_acc / ns
+
+            # Validation
             val_loss, val_acc = self.evaluate(X_val, y_val)
 
-            # Compute train & validation loss/accuracy
-            # train_loss, train_acc = self.evaluate(X_train, y_train)
-            # val_loss, val_acc = self.evaluate(X_val, y_val)
-
-            print(f"Epoch {epoch+1}: Train Loss = {epoch_loss:.4f}, Train Acc = {tr_acc:.2f}%, "
-                  f"Val Loss = {val_loss:.4f}, Val Acc = {val_acc:.2f}%")
+            print(f"Epoch {epoch + 1}: Train Loss = {epoch_loss:.4f}, Train Acc = {tr_acc:.2f}%, "
+                f"Val Loss = {val_loss:.4f}, Val Acc = {val_acc:.2f}%")
 
             if self.use_wandb == "true":
-                wandb.init(project=self.wandb_project, entity=self.wandb_entity)
                 wandb.log({
                     'epoch': epoch,
                     'avg_train_loss': epoch_loss,
@@ -235,6 +191,9 @@ class NeuralNetwork:
                     'avg_train_acc': tr_acc,
                     'avg_valid_acc': val_acc
                 })
+
+        if self.use_wandb == "true":
+            wandb.finish()
 
     def evaluate(self, X, y):
         """Computes loss & accuracy for given dataset."""

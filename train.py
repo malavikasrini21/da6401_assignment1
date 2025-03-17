@@ -46,57 +46,67 @@ def parse_args():
     return parser.parse_args()
 
 def wandb_sweep():
-    with wandb.init() as run:
+    with wandb.init(project=args.wandb_project) as run:
         config = wandb.config
-        epochs = config.epochs
-        num_layers = config.num_layers
-        learning_rate = config.learning_rate
-        hidden_size = config.hidden_size
-        weight_decay = config.weight_decay
-        batch_size = config.batch_size
-        optimizer = config.optimizer
-        weight_init = config.weight_init
-        activation = config.activation
-        loss = config.loss
-        
-        if args.use_wandb == "true":
-            wandb.init(project=args.wandb_project, entity=args.wandb_entity)
-        run_name=f"ac_{activation}_hl_{num_layers}_hs_{hidden_size}_bs_{batch_size}_op_{optimizer}_ep_{epochs}"
-        wandb.run.name=run_name
+        run_name = f"ac_{config.activation}_hl_{config.num_layers}_hs_{config.hidden_size}_bs_{config.batch_size}_op_{config.optimizer}_ep_{config.epochs}"
+        wandb.run.name = run_name
 
-        optimizer = get_optimizer(args.optimizer, None, args)        
+        optimizer = get_optimizer(config.optimizer, None, config,args)
         model = NeuralNetwork(
-            use_wandb="true",
+            use_wandb=args.use_wandb,
             wandb_project=args.wandb_project,
             wandb_entity=args.wandb_entity,
             input_size=X_smp_train.shape[1],
-            hidden_size=hidden_size,
+            hidden_size=config.hidden_size,
             output_size=10,
-            activation=activation,
-            weight_init=weight_init,
-            loss_fn=loss,
+            activation=config.activation,
+            weight_init=config.weight_init,
+            loss_fn=config.loss,
             optimizer=optimizer,
-            num_layers=num_layers,
-            lr=learning_rate,
+            num_layers=config.num_layers,
+            lr=config.learning_rate,
             momentum=args.momentum,
             beta=args.beta,
             beta1=args.beta1,
             beta2=args.beta2,
             epsilon=args.epsilon,
-            weight_decay=weight_decay,
+            weight_decay=config.weight_decay,
         )
-    model.train(X_smp_train, y_smp_train,X_smp_valid, y_smp_valid, epochs=epochs, batch_size=args.batch_size)
         
-    # Test Model
-    test_predictions = model.predict(X_test)
-    test_predictions=one_hot_encode(test_predictions)
-    test_predictions = get_activation("softmax")(test_predictions)  # Ensure predictions are probabilities
-    test_loss = model.loss_fn(test_predictions, y_test)
-    test_accuracy = np.mean(np.argmax(test_predictions, axis=1) == np.argmax(y_test, axis=1)) * 100
-
-    print(f"Test Loss: {test_loss:.4f}, Test Accuracy: {test_accuracy:.2f}%")
-
+        model.train(X_smp_train, y_smp_train, X_smp_valid, y_smp_valid, epochs=config.epochs, batch_size=config.batch_size)
         
+        # Test Model
+        test_predictions = model.predict(X_test)
+        test_predictions_oh = one_hot_encode(test_predictions)
+        test_predictions_oh = get_activation("softmax")(test_predictions_oh)
+        test_loss = model.loss_fn(test_predictions_oh, y_test)
+        test_accuracy = np.mean(np.argmax(test_predictions_oh, axis=1) == np.argmax(y_test, axis=1)) * 100
+
+        # Log test metrics to WandB
+        if args.use_wandb == "true":
+            wandb.init(project=args.wandb_project, entity=args.wandb_entity)
+            print(f"Test Loss: {test_loss:.4f}, Test Accuracy: {test_accuracy:.2f}%")
+            wandb.log({"Test Loss": test_loss, "Test Accuracy": test_accuracy})
+
+            # Log Confusion Matrix
+            y_true = np.argmax(y_test, axis=1)  # Convert y_test to class indices
+            y_pred = np.argmax(test_predictions_oh, axis=1)  # Convert predictions to class indices
+            wandb.log({"confusion_matrix": wandb.plot.confusion_matrix(
+                        probs=None,  # No probabilities, just class indices
+                        y_true=y_true,  # 1D array of true class indices
+                        preds=y_pred,  # 1D array of predicted class indices
+                        class_names=target_classes  # List of class names
+            )})
+        
+        # if args.use_wandb == "true":
+        #     wandb.init(project=args.wandb_project, entity=args.wandb_entity)
+        #     print(f"Test Loss: {test_loss:.4f}, Test Accuracy: {test_accuracy:.2f}%")
+        #     wandb.log({"Test Loss": test_loss, "Test Accuracy": test_accuracy})
+
+        #     # Log Confusion Matrix
+        #     y_pred = np.argmax(test_predictions_oh, axis=1)
+        #     wandb.log({"confusion_matrix": wandb.plot.confusion_matrix(probs=None, y_true=y_test, preds=y_pred, class_names=target_classes)})
+        #     wandb.finish()
 # --- Main Execution ---
 def main(args: argparse.Namespace):
     if args.use_wandb == "true":
@@ -110,7 +120,7 @@ def main(args: argparse.Namespace):
             },
             'parameters': {
                 'epochs': {
-                    'values': [10,20,30]
+                    'values': [5,10,15]
                 },
                 'num_layers': {
                     'values': [3,4,5]
@@ -131,17 +141,17 @@ def main(args: argparse.Namespace):
                 },'activation':{
                     'values': ['sigmoid','tanh','ReLu']
                 },'loss':{
-                    'values':['cross_entropy','mean_squared_error']
+                    'values':['cross_entropy']
                 }
             }
         }
         sweep_id = wandb.sweep(sweep=sweep_config, project=args.wandb_project)
 
     if args.use_wandb == "true":
-        wandb.agent(sweep_id, function=wandb_sweep, count=20)
+        wandb.agent(sweep_id, function=wandb_sweep, count=25)
         wandb.finish()
     else:    
-        optimizer = get_optimizer(args.optimizer, None, args)
+        optimizer = get_optimizer(args.optimizer, None, None, args)
 
         # Initialize Model
         model = NeuralNetwork(
@@ -175,12 +185,6 @@ def main(args: argparse.Namespace):
         test_accuracy = np.mean(np.argmax(test_predictions, axis=1) == np.argmax(y_test, axis=1)) * 100
 
         print(f"Test Loss: {test_loss:.4f}, Test Accuracy: {test_accuracy:.2f}%")
-
-    if args.use_wandb == "true":
-        wandb.init(project=args.wandb_project)
-        wandb.run.name="confusion_matrix"
-        wandb.log({"confusion_matrix" : wandb.plot.confusion_matrix(probs=None, y_true=y_test, preds=test_predictions, class_names=labels)})
-        wandb.finish()
 
 if __name__ == "__main__":
     args = parse_args()
